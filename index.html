@@ -1,0 +1,419 @@
+<!--
+LearnByte - Single-file HTML MVP (UPDATED)
+
+This updated version improves error handling for failed API requests and provides debugging tools
+so you can quickly find why "Failed to fetch lessons" happens.
+
+Changes made:
+- Better error reporting (shows network errors, HTTP status, and response text when available).
+- "Test API" button to check root (/) and /lessons endpoints and see raw responses.
+- Fallback: "Use Mock Data" toggle to run the UI without a working backend for testing.
+- Allows overriding API_BASE at runtime via UI (useful when deploying or testing locally).
+- Clear troubleshooting hints for CORS, wrong URL, and server down cases.
+
+How to use:
+1. Save this file as `learnbyte_mvp.html` (replace previous file).
+2. Open in browser.
+3. If your API is on a different URL, click "Change API Base" and paste the correct base.
+4. Use "Test API" to inspect responses.
+5. If API is unreachable, toggle "Use Mock Data" to continue testing the frontend.
+
+Notes:
+- Backend must have CORS enabled for the frontend domain. If using Render, make sure CORS is set correctly.
+- The upload flow still expects POST /upload-video and POST /lessons etc.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LearnByte — MVP (Debuggable)</title>
+  <!-- Materialize CSS CDN -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
+  <style>
+    body { display:flex; min-height:100vh; flex-direction:column; }
+    main { flex:1 0 auto; padding: 16px; }
+    .container { max-width: 980px; }
+    .lesson-card { cursor: pointer; }
+    .video-wrapper { max-width: 100%; }
+    .loading { text-align:center; padding:32px; }
+    .small-muted { font-size:0.9rem; color:#666 }
+    .diagnostic { white-space:pre-wrap; font-family:monospace; background:#f8f8f8; padding:12px; border-radius:6px; }
+    @media (max-width:600px){ .lesson-grid { display:block } }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="blue darken-1">
+      <div class="nav-wrapper container">
+        <a href="#/" class="brand-logo">LearnByte</a>
+        <ul id="nav-mobile" class="right">
+          <li><a href="#/upload"><i class="material-icons left">cloud_upload</i>Upload</a></li>
+          <li><a id="refreshBtn" href="#/">Refresh</a></li>
+        </ul>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <div class="container" id="app">
+      <!-- Views rendered here -->
+      <div class="card-panel light-blue lighten-5">
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+          <div>
+            <strong>API Base:</strong>
+            <span id="apiBaseDisplay" class="small-muted"></span>
+          </div>
+          <a class="btn-flat" id="changeApiBtn">Change API Base</a>
+          <a class="btn" id="testApiBtn">Test API</a>
+          <label style="margin-left:8px">
+            <input type="checkbox" id="useMock" />
+            <span>Use Mock Data</span>
+          </label>
+        </div>
+        <div id="diagnostics" style="margin-top:10px; display:none;">
+          <div class="diagnostic" id="diagOutput"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="page-footer blue darken-1">
+    <div class="container">
+      <div class="row">
+        <div class="col s12">
+          <h5 class="white-text">LearnByte</h5>
+          <p class="grey-text text-lighten-4">Simple MVP — HTML + JS powered frontend for your LearnByte API.</p>
+        </div>
+      </div>
+    </div>
+    <div class="footer-copyright">
+      <div class="container">© LearnByte</div>
+    </div>
+  </footer>
+
+  <!-- Materialize JS + Icons -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <script>
+  // ====== DEFAULT CONFIG ======
+  let API_BASE = 'https://learnbyteapi-2.onrender.com'; // change if needed
+  // ==========================
+
+  // Mock data for testing (used when API is unreachable or Use Mock Data checked)
+  const MOCK_LESSONS = [
+    { _id: 'm1', title: 'Welcome to LearnByte', description: 'This is a mock lesson used for testing when API is down.', videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4' },
+    { _id: 'm2', title: 'Quick Start', description: 'How to upload lessons and use the platform (mock).', videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4' }
+  ];
+
+  // Simple hash router
+  function router() {
+    const hash = location.hash || '#/';
+    const app = document.getElementById('app');
+    // simple parsing
+    if (hash.startsWith('#/upload')) return renderUpload(app);
+    if (hash.startsWith('#/lesson')) {
+      const params = new URLSearchParams(hash.split('?')[1]);
+      const id = params.get('id');
+      return renderLesson(app, id);
+    }
+    return renderHome(app);
+  }
+
+  // Utility: show toast
+  function showToast(msg, duration=3000) {
+    if (window.M && M.toast) M.toast({html: msg, displayLength: duration});
+    else alert(msg);
+  }
+
+  // Update API base display
+  function refreshApiDisplay() {
+    document.getElementById('apiBaseDisplay').innerText = API_BASE;
+  }
+
+  // Diagnostic output helper
+  function showDiag(msg) {
+    const diag = document.getElementById('diagnostics');
+    const out = document.getElementById('diagOutput');
+    diag.style.display = 'block';
+    out.innerText = msg;
+  }
+
+  // Test API endpoints and show results
+  async function testApi() {
+    const lines = [];
+    lines.push('Testing API base: ' + API_BASE);
+
+    // test root
+    try {
+      const r = await fetch(API_BASE + '/');
+      lines.push('\nGET / -> ' + r.status + ' ' + r.statusText);
+      try { const t = await r.text(); lines.push('Response body (first 1000 chars):\n' + t.slice(0,1000)); } catch(e){ lines.push('Failed to read body: ' + e.message); }
+    } catch(err) {
+      lines.push('\nGET / -> NETWORK ERROR: ' + (err.message || err));
+    }
+
+    // test lessons
+    try {
+      const r2 = await fetch(API_BASE + '/lessons');
+      lines.push('\nGET /lessons -> ' + r2.status + ' ' + r2.statusText);
+      try { const json = await r2.json(); lines.push('JSON length: ' + (Array.isArray(json) ? json.length : typeof json)); } catch(e){ lines.push('Failed to parse /lessons body as JSON: ' + e.message); }
+    } catch(err) {
+      lines.push('\nGET /lessons -> NETWORK ERROR: ' + (err.message || err));
+      lines.push('\nPossible causes: API is down, wrong API_BASE, or CORS blocked the request.');
+    }
+
+    showDiag(lines.join('\n'));
+  }
+
+  // fetchLessons with explicit error info
+  async function fetchLessons() {
+    // If using mock, return it immediately
+    const useMock = document.getElementById('useMock') && document.getElementById('useMock').checked;
+    if (useMock) return MOCK_LESSONS;
+
+    try {
+      const res = await fetch(API_BASE + '/lessons');
+      if (!res.ok) {
+        // try to capture body text for more error info
+        let bodyText = '';
+        try { bodyText = await res.text(); } catch(e) { bodyText = '<failed to read body: '+ e.message +'>'; }
+        const err = new Error('Failed to fetch lessons: HTTP ' + res.status + ' ' + res.statusText + '\n' + bodyText);
+        err.status = res.status;
+        throw err;
+      }
+      const json = await res.json();
+      return json;
+    } catch (err) {
+      // rethrow with more context
+      const message = (err && err.message) ? err.message : String(err);
+      throw new Error('Network or API error when fetching lessons: ' + message);
+    }
+  }
+
+  // Home: list lessons
+  async function renderHome(container) {
+    container.innerHTML = `
+      <div class="section">
+        <h4>Latest Lessons</h4>
+        <div id="lessonsArea" class="lesson-grid row"></div>
+      </div>
+    `;
+
+    const lessonsArea = document.getElementById('lessonsArea');
+    lessonsArea.innerHTML = '<div class="loading">Loading lessons...</div>';
+
+    try {
+      const lessons = await fetchLessons();
+
+      if (!Array.isArray(lessons) || lessons.length === 0) {
+        lessonsArea.innerHTML = '<p>No lessons yet. Click Upload to add one.</p>';
+        return;
+      }
+
+      lessonsArea.innerHTML = '';
+      lessons.forEach(lesson => {
+        const col = document.createElement('div');
+        col.className = 'col s12 m6';
+        col.innerHTML = `
+          <div class="card lesson-card">
+            <div class="card-image">
+              <video src="${lesson.videoUrl}" preload="metadata" style="max-height:220px; width:100%; object-fit:cover;" muted></video>
+            </div>
+            <div class="card-content">
+              <span class="card-title">${escapeHtml(lesson.title)}</span>
+              <p>${escapeHtml(limitText(lesson.description || '', 120))}</p>
+            </div>
+            <div class="card-action">
+              <a href="#/lesson?id=${lesson.id || lesson.id}">Open</a>
+              <a href="javascript:void(0)" data-id="${lesson.id || lesson.id}" class="delete-link red-text">Delete</a>
+            </div>
+          </div>
+        `;
+        lessonsArea.appendChild(col);
+      });
+
+      // attach delete handlers
+      document.querySelectorAll('.delete-link').forEach(el => {
+        el.addEventListener('click', async (e) => {
+          const id = e.target.dataset.id;
+          if (!confirm('Delete this lesson?')) return;
+          try {
+            const del = await fetch(API_BASE + '/lessons/' + id, { method: 'DELETE' });
+            if (!del.ok) throw new Error('Delete failed: ' + del.status + ' ' + del.statusText);
+            showToast('Deleted');
+            router();
+          } catch(err) {
+            console.error(err);
+            showToast('Delete failed: ' + (err.message || err));
+            showDiag('Delete error:\n' + (err.message || String(err)));
+          }
+        });
+      });
+
+    } catch (err) {
+      console.error(err);
+      lessonsArea.innerHTML = '<p class="red-text">Failed to load lessons. See diagnostics below.</p>';
+      showDiag('Error fetching lessons:\n' + (err.message || String(err)) + '\n\nTroubleshooting:\n- Check API URL is correct.\n- Check server is running.\n- Ensure CORS allows your frontend origin.\n- Open browser DevTools Network tab to inspect the request.');
+    }
+  }
+
+  // Upload page
+  function renderUpload(container) {
+    container.innerHTML = `
+      <div class="section">
+        <h4>Upload Lesson</h4>
+        <div class="row">
+          <form id="uploadForm" class="col s12">
+            <div class="row">
+              <div class="input-field col s12">
+                <input id="title" type="text" required>
+                <label for="title">Title</label>
+              </div>
+              <div class="input-field col s12">
+                <textarea id="description" class="materialize-textarea"></textarea>
+                <label for="description">Description</label>
+              </div>
+              <div class="file-field input-field col s12">
+                <div class="btn">
+                  <span>Video</span>
+                  <input id="videoFile" type="file" accept="video/*" required>
+                </div>
+                <div class="file-path-wrapper">
+                  <input class="file-path validate" type="text" placeholder="Upload video file">
+                </div>
+              </div>
+              <div class="col s12">
+                <button class="btn blue" id="uploadBtn" type="submit">Upload & Create Lesson</button>
+                <a href="#/" class="btn-flat">Cancel</a>
+              </div>
+            </div>
+          </form>
+          <div id="uploadProgress" style="display:none; margin-top:16px;"></div>
+        </div>
+      </div>
+    `;
+
+    M.updateTextFields();
+
+    const form = document.getElementById('uploadForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value.trim();
+      const description = document.getElementById('description').value.trim();
+      const fileInput = document.getElementById('videoFile');
+      if (!fileInput.files || fileInput.files.length === 0) { showToast('Select a video'); return; }
+      const file = fileInput.files[0];
+
+      // show progress area
+      const progress = document.getElementById('uploadProgress');
+      progress.style.display = 'block';
+      progress.innerText = 'Uploading video... (this may take a while)';
+
+      try {
+        const fd = new FormData();
+        fd.append('video', file);
+
+        // upload video to backend which uploads to Cloudinary
+        const upl = await fetch(API_BASE + '/upload-video', {
+          method: 'POST', body: fd
+        });
+        if (!upl.ok) throw new Error('Upload failed: ' + upl.status + ' ' + upl.statusText);
+        const uplJson = await upl.json();
+        const videoUrl = uplJson.videoUrl;
+        if (!videoUrl) throw new Error('No videoUrl returned');
+
+        progress.innerText = 'Creating lesson...';
+        const create = await fetch(API_BASE + '/lessons', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, description, videoUrl })
+        });
+        if (!create.ok) throw new Error('Lesson creation failed: ' + create.status + ' ' + create.statusText);
+        showToast('Lesson created');
+        location.hash = '#/';
+
+      } catch (err) {
+        console.error(err);
+        showToast('Upload or create failed — check console');
+        progress.innerText = 'Upload failed. See diagnostics.';
+        showDiag('Upload/Create error:\n' + (err.message || String(err)) + '\n\nCheck API, CORS, and backend logs.');
+      }
+    });
+  }
+
+  // Lesson view
+  async function renderLesson(container, id) {
+    if (!id) { container.innerHTML = '<p>Invalid lesson ID</p>'; return; }
+    container.innerHTML = '<div class="loading">Loading lesson...</div>';
+    try {
+      const lessons = await fetchLessons(); // get all and find one (simple)
+      const lesson = (Array.isArray(lessons) && (lessons.find(l => l.id === id) || lessons.find(l => l.id === id))) || null;
+      if (!lesson) { container.innerHTML = '<p>Lesson not found.</p>'; return; }
+
+      container.innerHTML = `
+        <div class="section">
+          <h4>${escapeHtml(lesson.title)}</h4>
+          <div class="video-wrapper">
+            <video controls width="100%" src="${lesson.videoUrl}"></video>
+          </div>
+          <p style="margin-top:16px">${escapeHtml(lesson.description || '')}</p>
+          <div style="margin-top:8px">
+            <a href="#/" class="btn-flat">Back</a>
+            <a href="javascript:void(0)" id="deleteLesson" class="btn red">Delete</a>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('deleteLesson').addEventListener('click', async () => {
+        if (!confirm('Delete this lesson?')) return;
+        try {
+          const del = await fetch(API_BASE + '/lessons/' + (lesson.id || lesson.id), { method: 'DELETE' });
+          if (!del.ok) throw new Error('Delete failed');
+          showToast('Deleted');
+          location.hash = '#/';
+        } catch(e) { console.error(e); showToast('Delete failed'); showDiag('Delete error:\n' + (e.message || String(e))); }
+      });
+
+    } catch (err) {
+      console.error(err);
+      container.innerHTML = '<p class="red-text">Failed to load lesson. Check API.</p>';
+      showDiag('Error fetching lesson:\n' + (err.message || String(err)));
+    }
+  }
+
+  // helpers
+  function escapeHtml(unsafe) {
+    return String(unsafe || '').replace(/[&<>\"]+/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+  }
+  function limitText(s, n){ return s && s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+  // Init
+  window.addEventListener('hashchange', router);
+  document.addEventListener('DOMContentLoaded', () => {
+    // wire up controls
+    refreshApiDisplay();
+
+    document.getElementById('testApiBtn').addEventListener('click', async () => {
+      await testApi();
+    });
+
+    document.getElementById('changeApiBtn').addEventListener('click', () => {
+      const val = prompt('Enter API base URL (e.g. https://learnbyteapi-2.onrender.com):', API_BASE);
+      if (val) { API_BASE = val.trim().replace(/\/+$/,''); refreshApiDisplay(); showToast('API base updated'); }
+    });
+
+    document.getElementById('useMock').addEventListener('change', () => {
+      showToast(document.getElementById('useMock').checked ? 'Using mock data' : 'Using live API');
+      router();
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', (e)=>{ e.preventDefault(); router(); });
+
+    // initial route
+    router();
+  });
+  </script>
+</body>
+</html>
