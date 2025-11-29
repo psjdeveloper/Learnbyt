@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LearnByte Flash — Monaco + solc-js MVP</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#f8fafc; --card:#fff; --muted:#6b7280; }
+    body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); color:#0f172a; }
+    .wrap { max-width:1100px; margin:24px auto; padding:18px; }
+    .header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:12px; }
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    button { cursor:pointer; }
+    .tab-btn { padding:8px 12px; border-radius:8px; border:1px solid #e6edf3; background:#fff; }
+    .tab-btn.active { background:#0ea5e9; color:white; border-color:transparent; }
+    .card { background:var(--card); border-radius:10px; padding:12px; box-shadow:0 1px 6px rgba(2,6,23,0.06); }
+    .grid { display:grid; grid-template-columns: 1fr 380px; gap:12px; align-items:start; }
+    .controls { display:flex; gap:8px; margin-top:8px; }
+    .small { font-size:13px; color:var(--muted); }
+    pre.console { background:#0f172a; color:#fff; padding:10px; border-radius:8px; height:180px; overflow:auto; white-space:pre-wrap; }
+    .select { padding:6px 8px; border-radius:6px; border:1px solid #e6edf3; }
+    .footer { margin-top:12px; font-size:12px; color:var(--muted); }
+  </style>
+
+  <!-- Monaco Editor loader config -->
+  <script>
+    window.require = { paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.38.0/min/vs' } };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.38.0/min/vs/loader.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h1 style="margin:0">Blockly by Learnbyte</h1>
+        <div class="small">Learn solidity and blockchain easily </div>
+      </div>
+      <div style="text-align:right">
+        <div class="small">Local Streak: <span id="streak">0</span></div>
+        <div class="small" style="margin-top:6px">Open this file in a modern browser</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button id="tab-blockchain" class="tab-btn active">Blockchain (Solidity)</button>
+      <button id="tab-coding" class="tab-btn">Coding (JS)</button>
+      <button id="tab-cards" class="tab-btn">Flashcards</button>
+    </div>
+
+    <div class="grid">
+      <div>
+        <div id="editorCard" class="card" style="height:560px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px;">
+            <div>
+              <strong id="challengeTitle">Hello Flash</strong>
+              <div id="challengePrompt" class="small">Return the string 'Hello Flash' from a function called hi().</div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <select id="challengeSelect" class="select"></select>
+            </div>
+          </div>
+
+          <div id="monacoContainer" style="flex:1; border-radius:8px; overflow:hidden; border:1px solid #e6edf3;"></div>
+
+          <div class="controls" style="margin-top:8px">
+            <button id="runBtn" class="tab-btn">Compile / Run</button>
+            <button id="resetBtn" class="tab-btn">Reset</button>
+            <button id="copyBtn" class="tab-btn">Copy</button>
+            <div style="flex:1"></div>
+            <div class="small">solc status: <span id="solcStatus">not loaded</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>Console / Output</strong>
+            <div class="small">Quick info & messages</div>
+          </div>
+
+          <pre id="console" class="console" style="margin-top:8px;">Ready.</pre>
+
+          <div style="margin-top:10px; display:flex; gap:8px;">
+            <button id="clearConsole" class="tab-btn">Clear</button>
+            <button id="resetStreakBtn" class="tab-btn">Reset Streak</button>
+          </div>
+
+          <div class="footer">
+            Notes: solc-js is large. If the in-browser compile fails, consider moving compilation to a server or using solc remotely.
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px;">
+          <strong>Flashcards</strong>
+          <div id="cardsArea" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Basic MVP data (same challenges as before)
+  const blockchainChallenges = [
+    {
+      id:1,
+      title:'Hello Flash',
+      prompt:"Return the string 'Hello Flash' from a function called hi().",
+      starter:`pragma solidity ^0.8.0;
+
+contract Hello {
+  function hi() public pure returns (string memory) {
+    return "Hello Flash";
+  }
+}`,
+      expectedSnippet: "hello flash"
+    },
+    {
+      id:2,
+      title:'Add Two',
+      prompt:"Write a function add(uint a, uint b) public pure returns (uint) that returns a + b.",
+      starter:`pragma solidity ^0.8.0;
+
+contract Add {
+  function add(uint a, uint b) public pure returns (uint) {
+    return a + b;
+  }
+}`,
+      expectedSnippet: "return a + b"
+    }
+  ];
+
+  const codingChallenges = [
+    { id:1, title:'Reverse String (JS)', prompt:'Reverse input string', starter:`// implement solve(input)\nfunction solve(input){ return input.split('').reverse().join(''); }`, test:{ input:'hello', expected:'olleh' } },
+    { id:2, title:'Sum Array (JS)', prompt:'Sum numbers array', starter:`function solve(arr){ return arr.reduce((a,b)=>a+b,0); }`, test:{ input:[1,2,3,4], expected:10 } }
+  ];
+
+  const flashcards = [
+    { q:'What is gas in Ethereum?', a:'The fee required to execute operations on the EVM.' },
+    { q:"What does 'immutable' mean for a smart contract?", a:'Cannot be changed after deployment.' },
+    { q:'What is a reentrancy bug?', a:'When an external call re-enters the contract and manipulates state unexpectedly.' }
+  ];
+
+  // state
+  let currentMode = 'blockchain'; // blockchain | coding | cards
+  let editor = null;               // monaco editor instance
+  let solcModule = null;           // solc-js if loaded
+  let streak = 0;
+
+  // small helpers
+  const $ = id => document.getElementById(id);
+  function log(msg){ const c=$('console'); c.textContent += '\\n'+msg; c.scrollTop = c.scrollHeight; }
+  function setConsole(msg){ $('console').textContent = String(msg); }
+  function setSolcStatus(s){ $('solcStatus').textContent = s; }
+
+  // init UI
+  function populateChallengeSelect(){
+    const sel = $('challengeSelect');
+    sel.innerHTML = '';
+    if (currentMode === 'blockchain'){
+      blockchainChallenges.forEach((c,i)=> {
+        const opt = document.createElement('option');
+        opt.value = i; opt.text = c.title;
+        sel.appendChild(opt);
+      });
+      $('challengeTitle').textContent = blockchainChallenges[0].title;
+      $('challengePrompt').textContent = blockchainChallenges[0].prompt;
+    } else {
+      codingChallenges.forEach((c,i)=> {
+        const opt = document.createElement('option');
+        opt.value = i; opt.text = c.title;
+        sel.appendChild(opt);
+      });
+      $('challengeTitle').textContent = codingChallenges[0].title;
+      $('challengePrompt').textContent = codingChallenges[0].prompt;
+    }
+  }
+
+  function updateChallengeInfo(index){
+    if (currentMode === 'blockchain'){
+      const c = blockchainChallenges[index];
+      $('challengeTitle').textContent = c.title;
+      $('challengePrompt').textContent = c.prompt;
+    } else {
+      const c = codingChallenges[index];
+      $('challengeTitle').textContent = c.title;
+      $('challengePrompt').textContent = c.prompt;
+    }
+  }
+
+  // load Monaco
+  window.require(['vs/editor/editor.main'], function() {
+    editor = monaco.editor.create(document.getElementById('monacoContainer'), {
+      value: blockchainChallenges[0].starter,
+      language: 'solidity',
+      theme: 'vs-light',
+      automaticLayout: true,
+      minimap: { enabled: false }
+    });
+  });
+
+  // load streak from localStorage
+  try { streak = parseInt(localStorage.getItem('flash-streak')||'0',10)||0; } catch(e){streak=0;}
+  $('streak').textContent = streak;
+
+  function bumpStreak(){ streak = Math.max(0,streak)+1; localStorage.setItem('flash-streak',String(streak)); $('streak').textContent = streak; }
+
+  // tab handlers
+  document.getElementById('tab-blockchain').addEventListener('click', ()=>switchTo('blockchain'));
+  document.getElementById('tab-coding').addEventListener('click', ()=>switchTo('coding'));
+  document.getElementById('tab-cards').addEventListener('click', ()=>switchTo('cards'));
+
+  function switchTo(mode){
+    currentMode = mode;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById('tab-'+mode).classList.add('active');
+    // set select / editor language / content
+    populateChallengeSelect();
+    if (mode === 'blockchain'){
+      editor && monaco.editor.setModelLanguage(editor.getModel(),'solidity');
+      editor && editor.setValue(blockchainChallenges[0].starter);
+    } else if (mode === 'coding'){
+      editor && monaco.editor.setModelLanguage(editor.getModel(),'javascript');
+      editor && editor.setValue(codingChallenges[0].starter);
+    } else {
+      // cards mode: show simple card in editor area
+      editor && editor.setValue("// Flashcards mode — use the right panel to browse cards");
+    }
+  }
+
+  // challenge select change
+  $('challengeSelect').addEventListener('change', (e)=> {
+    const idx = Number(e.target.value||0);
+    updateChallengeInfo(idx);
+    if (currentMode === 'blockchain'){
+      editor && editor.setValue(blockchainChallenges[idx].starter);
+    } else {
+      editor && editor.setValue(codingChallenges[idx].starter);
+    }
+  });
+
+  // run / compile button
+  $('runBtn').addEventListener('click', async ()=>{
+    setConsole('Working...');
+    if (currentMode === 'coding'){
+      // run JS test
+      const idx = Number($('challengeSelect').value||0);
+      const challenge = codingChallenges[idx];
+      runJsChallenge(challenge);
+    } else if (currentMode === 'blockchain'){
+      // try to compile with solc
+      const src = editor.getValue();
+      await compileSolidityInBrowser(src);
+    } else {
+      setConsole('Flashcards mode — use the cards panel.');
+    }
+  });
+
+  $('resetBtn').addEventListener('click', ()=> {
+    const idx = Number($('challengeSelect').value||0);
+    if (currentMode === 'blockchain') editor.setValue(blockchainChallenges[idx].starter);
+    else if (currentMode === 'coding') editor.setValue(codingChallenges[idx].starter);
+  });
+
+  $('copyBtn').addEventListener('click', ()=> {
+    navigator.clipboard.writeText(editor.getValue()).then(()=>log('Copied to clipboard.'));
+  });
+
+  $('clearConsole').addEventListener('click', ()=> setConsole(''));
+  $('resetStreakBtn').addEventListener('click', ()=> { streak=0; localStorage.setItem('flash-streak','0'); $('streak').textContent = '0'; });
+
+  // JS runner
+  function runJsChallenge(challenge){
+    try {
+      // sandboxed run: wrap the code so we can extract `solve`
+      const wrapped = `(function(){\n${editor.getValue()}\nreturn typeof solve === 'function' ? solve : null;\n})()`;
+      const solver = new Function(wrapped)(); // returns the function
+      if (!solver) { setConsole('No solve() function found in code.'); return; }
+      const actual = solver(challenge.test.input);
+      const pass = JSON.stringify(actual) === JSON.stringify(challenge.test.expected);
+      setConsole(pass ? `✅ Passed — output: ${JSON.stringify(actual)}` : `❌ Failed — expected ${JSON.stringify(challenge.test.expected)}, got ${JSON.stringify(actual)}`);
+      if (pass) bumpStreak();
+    } catch (err){
+      setConsole('❌ Error: '+ String(err));
+    }
+  }
+
+  // Minimal attempt to load solc-js and compile
+  async function compileSolidityInBrowser(source){
+    setSolcStatus('loading...');
+    setConsole('Trying to load solc-js from CDN (may be heavy)...');
+
+    // Try several known CDN module paths — some are UMD, some ESM; we attempt graceful fallback
+    const tried = [];
+    async function tryImport(url){
+      tried.push(url);
+      try {
+        // dynamic import as module; will fail if URL does not export ES module
+        const mod = await import(url);
+        return mod;
+      } catch (e){
+        // try fallback: load as script tag
+        return new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = url;
+          s.onload = ()=> {
+            // many UMD builds expose `window.Module` or `window.solc`
+            resolve(window.solc || window.Module || window.Solc || window.soljson || null);
+          };
+          s.onerror = (err)=> reject(err);
+          document.head.appendChild(s);
+        });
+      }
+    }
+
+    // Candidate URLs (may change over time)
+    const candidates = [
+      // preferred: solidity nightly builds (Emscripten); these often attach global Module/solc
+      'https://binaries.soliditylang.org/bin/soljson-latest.js',
+      // common npm CDN (may not be ESM)
+      'https://cdn.jsdelivr.net/npm/solc@0.8.20/solc.min.js',
+      'https://cdn.jsdelivr.net/npm/solc@0.8.17/solc.min.js',
+      // fallback: solc-js wrapper on unpkg (may or may not be ESM)
+      'https://unpkg.com/solc@0.8.20/solc.js'
+    ];
+
+    for (const url of candidates){
+      try {
+        setConsole('Loading: ' + url);
+        const mod = await tryImport(url);
+        if (mod) {
+          // ESM import may expose default or named export; UMD exposes window.solc or Module
+          solcModule = mod.default || mod || window.solc || window.Module || window.Solc || null;
+          if (solcModule) break;
+        }
+      } catch (e){
+        log('Failed loading ' + url + ' : ' + String(e));
+      }
+    }
+
+    if (!solcModule) {
+      setSolcStatus('not available');
+      setConsole('Could not load solc-js from CDN. Check console for details. Consider using a server-side compile.');
+      return;
+    }
+
+    setSolcStatus('loaded');
+    setConsole('solc-js loaded — compiling...');
+
+    // Prepare standard JSON input
+    const input = {
+      language: 'Solidity',
+      sources: { 'Contract.sol': { content: source } },
+      settings: { outputSelection: { '*': { '*': ['abi','evm.bytecode','evm.deployedBytecode'] } } }
+    };
+
+    try {
+      // two possible compile entrypoints:
+      // 1) solcModule.compile (solc-js ESM/UMD wrapper)
+      // 2) solcModule.cwrap / Module — handled by solcWrapper below
+      let compiledRaw = null;
+
+      if (typeof solcModule.compile === 'function') {
+        // some builds expect JSON string
+        compiledRaw = solcModule.compile(JSON.stringify(input));
+      } else if (typeof solcModule.Compiler === 'function' && solcModule.Compiler.compile) {
+        compiledRaw = solcModule.Compiler.compile(JSON.stringify(input));
+      } else if (window.Module && typeof window.Module.ccall === 'function' && window.Module.cwrap) {
+        // Emscripten Module path: use Module.ccall/cwrap is complex; many soljson builds expose `Module` with compile method.
+        if (typeof window.Module.compile === 'function') {
+          compiledRaw = window.Module.compile(JSON.stringify(input));
+        } else if (typeof window.Module.cwrap === 'function' && window.Module.cwrap('compile', 'string', ['string'])) {
+          // attempt to use cwrap compile (best-effort)
+          try {
+            const fn = window.Module.cwrap('compile', 'string', ['string']);
+            compiledRaw = fn(JSON.stringify(input));
+          } catch (e) {
+            console.warn('cwrap compile failed', e);
+          }
+        }
+      } else if (solcModule.default && typeof solcModule.default.compile === 'function') {
+        compiledRaw = solcModule.default.compile(JSON.stringify(input));
+      }
+
+      // compiledRaw might be string or object
+      const outputObj = typeof compiledRaw === 'string' ? JSON.parse(compiledRaw) : compiledRaw;
+
+      if (!outputObj) {
+        setConsole('solc loaded but compile returned no output. See console for details.');
+        console.warn('compile returned', compiledRaw, solcModule);
+        return;
+      }
+
+      if (outputObj.errors && outputObj.errors.length) {
+        const errs = outputObj.errors.filter(e=>e.severity==='error');
+        const warns = outputObj.errors.filter(e=>e.severity!=='error').map(e=>e.formattedMessage||e.message);
+        if (errs.length) {
+          setConsole('❌ Compilation errors:\\n' + errs.map(e=>e.formattedMessage||e.message).join('\\n'));
+          return;
+        }
+        if (warns.length) log('⚠️ Warnings:\\n' + warns.join('\\n'));
+      }
+
+      const contracts = (outputObj.contracts && outputObj.contracts['Contract.sol']) || {};
+      const names = Object.keys(contracts);
+      if (names.length === 0) {
+        setConsole('Compiled but no contracts detected in output.');
+        return;
+      }
+
+      setConsole('✅ Compile successful. Contracts: ' + names.join(', '));
+      log('ABI / bytecode available in console object.');
+      console.log('solc output', outputObj);
+
+      // small heuristic: if first challenge expected snippet present, pass
+      const idx = Number($('challengeSelect').value||0);
+      const expect = (blockchainChallenges[idx] && blockchainChallenges[idx].expectedSnippet) || '';
+      if (!expect || source.toLowerCase().includes(expect.toLowerCase())) {
+        log('✅ Heuristic check passed — bumping streak.');
+        bumpStreak();
+      } else {
+        log('❌ Heuristic check failed — expected snippet not found.');
+      }
+
+    } catch (err) {
+      setConsole('❌ Compile failed: ' + String(err));
+      console.error(err);
+    }
+  }
+
+  // Render flashcards into right panel
+  function renderCards(){
+    const area = $('cardsArea');
+    area.innerHTML = '';
+    flashcards.forEach((f,i)=>{
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.style.marginBottom = '8px';
+      el.innerHTML = `<div style="font-weight:600">${f.q}</div><div class="small" style="margin-top:6px">${f.a}</div>`;
+      area.appendChild(el);
+    });
+  }
+  renderCards();
+
+  // initial populate challenge select and editor language
+  populateChallengeSelect();
+
+  // small visual: enable selecting challenge index via select changes for both modes
+  $('challengeSelect').addEventListener('change', ()=> {
+    const idx = Number($('challengeSelect').value||0);
+    updateChallengeInfo(idx);
+  });
+
+  // when switching to cards, set the editor to show a message
+  // also ensure the select shows coding/blockchain appropriate items
+  // (we already handle switching above when tab buttons clicked)
+
+  // On first load, set JS language for coding tab if needed by switching later
+  setTimeout(()=> {
+    // ensure editor exists and set to solidity initially (already done in loader), keep stable
+  }, 300);
+  </script>
+</body>
+</html>
