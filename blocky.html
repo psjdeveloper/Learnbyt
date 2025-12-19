@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>LearnByte Flash — Solidity Parser</title>
+  <title>LearnByte — Remix Embedded</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
   <style>
@@ -12,20 +12,24 @@
       background: #f8fafc;
       color: #0f172a;
     }
-    .wrap { max-width: 1100px; margin: 24px auto; padding: 16px; }
+    .wrap {
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 16px;
+    }
     .card {
       background: #fff;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 12px;
       box-shadow: 0 1px 6px rgba(0,0,0,.08);
     }
     .grid {
       display: grid;
-      grid-template-columns: 1fr 360px;
+      grid-template-columns: 1fr 1fr;
       gap: 12px;
     }
     .btn {
-      padding: 8px 12px;
+      padding: 8px 14px;
       border-radius: 8px;
       border: 1px solid #e5e7eb;
       background: #fff;
@@ -36,118 +40,82 @@
       color: white;
       border: none;
     }
-    pre {
-      background: #0f172a;
-      color: #fff;
-      padding: 10px;
-      border-radius: 8px;
-      height: 180px;
-      overflow: auto;
+    iframe {
+      width: 100%;
+      height: 520px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
     }
-    select {
-      padding: 6px 8px;
-      border-radius: 6px;
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
     }
-    .small { font-size: 13px; color: #6b7280; }
   </style>
 
   <!-- Monaco Editor -->
   <script>
-    window.require = { paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.38.0/min/vs' } };
+    window.require = {
+      paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.38.0/min/vs" }
+    };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.38.0/min/vs/loader.js"></script>
-
-  <!-- Solidity Parser -->
-  <script src="https://cdn.jsdelivr.net/npm/solidity-parser-antlr@0.4.11/dist/index.min.js"></script>
 </head>
 
 <body>
 <div class="wrap">
-  <h2>Blockly by LearnByte</h2>
-  <p class="small">Solidity learning using AST (no compiler)</p>
+  <h2>LearnByte Solidity + Remix</h2>
+  <p class="small">Learn here → Compile in Remix</p>
 
   <div class="grid">
+
+    <!-- LEFT: LearnByte Editor -->
     <div class="card">
-      <strong id="title">Hello Flash</strong>
-      <p id="prompt" class="small">Create a function hi() that returns "Hello Flash"</p>
+      <strong>Solidity Editor (LearnByte)</strong>
 
-      <select id="challengeSelect"></select>
+      <div id="editor"
+           style="height:420px;border:1px solid #e5e7eb;border-radius:10px;">
+      </div>
 
-      <div id="editor" style="height:420px;border:1px solid #e5e7eb;border-radius:8px;"></div>
-
-      <div style="margin-top:10px;display:flex;gap:8px;">
-        <button class="btn primary" id="runBtn">Validate</button>
-        <button class="btn" id="resetBtn">Reset</button>
-        <span class="small">Streak: <b id="streak">0</b></span>
+      <div class="controls">
+        <button class="btn primary" onclick="openInRemixTab()">
+          🚀 Open Code in Remix
+        </button>
+        <button class="btn" onclick="resetCode()">Reset</button>
       </div>
     </div>
 
+    <!-- RIGHT: Remix IDE -->
     <div class="card">
-      <strong>Console</strong>
-      <pre id="console">Ready.</pre>
+      <strong>Remix IDE (Embedded)</strong>
+      <iframe
+        src="https://remix.ethereum.org"
+        title="Remix IDE">
+      </iframe>
+      <p class="small">
+        Note: For security reasons, code cannot be auto-injected into iframe.
+      </p>
     </div>
+
   </div>
 </div>
 
 <script>
-/* ------------------ Challenges ------------------ */
-const challenges = [
-  {
-    title: "Hello Flash",
-    prompt: "Create a function hi() that returns a string",
-    starter: `pragma solidity ^0.8.0;
+/* ---------------- Starter Code ---------------- */
+const starterCode = `pragma solidity ^0.8.0;
 
 contract Hello {
-  function hi() public pure returns (string memory) {
-    return "Hello Flash";
-  }
-}`,
-    check(ast) {
-      let found = false;
-      solidityParser.visit(ast, {
-        FunctionDefinition(node) {
-          if (node.name === "hi") found = true;
-        }
-      });
-      return found ? null : "Function hi() not found";
+    function hi() public pure returns (string memory) {
+        return "Hello Flash";
     }
-  },
-  {
-    title: "Add Two Numbers",
-    prompt: "Create add(uint a, uint b) that returns uint",
-    starter: `pragma solidity ^0.8.0;
+}`;
 
-contract Add {
-  function add(uint a, uint b) public pure returns (uint) {
-    return a + b;
-  }
-}`,
-    check(ast) {
-      let ok = false;
-      solidityParser.visit(ast, {
-        FunctionDefinition(node) {
-          if (node.name === "add" && node.parameters.length === 2) {
-            ok = true;
-          }
-        }
-      });
-      return ok ? null : "Function add(a,b) not detected";
-    }
-  }
-];
-
-/* ------------------ State ------------------ */
+/* ---------------- Monaco Init ---------------- */
 let editor;
-let streak = Number(localStorage.getItem("streak") || 0);
 
-/* ------------------ Helpers ------------------ */
-const $ = id => document.getElementById(id);
-const log = msg => $("console").textContent = msg;
-
-/* ------------------ Monaco Init ------------------ */
-require(["vs/editor/editor.main"], () => {
-  editor = monaco.editor.create($("editor"), {
-    value: challenges[0].starter,
+require(["vs/editor/editor.main"], function () {
+  editor = monaco.editor.create(document.getElementById("editor"), {
+    value: starterCode,
     language: "solidity",
     theme: "vs-light",
     minimap: { enabled: false },
@@ -155,52 +123,20 @@ require(["vs/editor/editor.main"], () => {
   });
 });
 
-/* ------------------ UI Setup ------------------ */
-challenges.forEach((c,i)=>{
-  const o = document.createElement("option");
-  o.value = i;
-  o.textContent = c.title;
-  $("challengeSelect").appendChild(o);
-});
+/* ---------------- Open in Remix ---------------- */
+function openInRemixTab() {
+  const code = editor.getValue();
+  const url =
+    "https://remix.ethereum.org/#code=" +
+    encodeURIComponent(code);
 
-$("streak").textContent = streak;
+  window.open(url, "_blank");
+}
 
-/* ------------------ Events ------------------ */
-$("challengeSelect").onchange = e => {
-  const c = challenges[e.target.value];
-  $("title").textContent = c.title;
-  $("prompt").textContent = c.prompt;
-  editor.setValue(c.starter);
-};
-
-$("resetBtn").onclick = () => {
-  const i = $("challengeSelect").value;
-  editor.setValue(challenges[i].starter);
-};
-
-$("runBtn").onclick = () => {
-  const src = editor.getValue();
-  let ast;
-
-  try {
-    ast = solidityParser.parse(src, { tolerant: false });
-  } catch (e) {
-    log("❌ Syntax Error:\n" + e.message);
-    return;
-  }
-
-  const challenge = challenges[$("challengeSelect").value];
-  const error = challenge.check(ast);
-
-  if (error) {
-    log("❌ " + error);
-  } else {
-    streak++;
-    localStorage.setItem("streak", streak);
-    $("streak").textContent = streak;
-    log("✅ Passed! AST validation successful.");
-  }
-};
+/* ---------------- Reset ---------------- */
+function resetCode() {
+  editor.setValue(starterCode);
+}
 </script>
 </body>
 </html>
