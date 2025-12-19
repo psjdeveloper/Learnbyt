@@ -1,27 +1,3 @@
-<!--
-LearnByte - Single-file HTML MVP (UPDATED)
-
-This updated version improves error handling for failed API requests and provides debugging tools
-so you can quickly find why "Failed to fetch lessons" happens.
-
-Changes made:
-- Better error reporting (shows network errors, HTTP status, and response text when available).
-- "Test API" button to check root (/) and /lessons endpoints and see raw responses.
-- Fallback: "Use Mock Data" toggle to run the UI without a working backend for testing.
-- Allows overriding API_BASE at runtime via UI (useful when deploying or testing locally).
-- Clear troubleshooting hints for CORS, wrong URL, and server down cases.
-
-How to use:
-1. Save this file as `learnbyte_mvp.html` (replace previous file).
-2. Open in browser.
-3. If your API is on a different URL, click "Change API Base" and paste the correct base.
-4. Use "Test API" to inspect responses.
-5. If API is unreachable, toggle "Use Mock Data" to continue testing the frontend.
-
-Notes:
-- Backend must have CORS enabled for the frontend domain. If using Render, make sure CORS is set correctly.
-- The upload flow still expects POST /upload-video and POST /lessons etc.
--->
 
 <!doctype html>
 <html lang="en">
@@ -51,6 +27,7 @@ Notes:
         <ul id="nav-mobile" class="right">
           <li><a href="#/upload"><i class="material-icons left">cloud_upload</i>Upload</a></li>
           <li><a id="refreshBtn" href="#/">Refresh</a></li>
+          <li><a  href="https://learnbyteacademy.vercel.app/">Academy</a></li>
         </ul>
       </div>
     </nav>
